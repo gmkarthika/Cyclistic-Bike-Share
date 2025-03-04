@@ -1,0 +1,47 @@
+--The result of this query is a merged target table that JOINs the public datasets and the zip code table
+SELECT  TRIPS.usertype as usertype,
+        ZIPSTART.zip_code as zip_code_start,
+        ZIPEND.zip_code as zip_code_end,
+        ZIPSTARTNAME.borough as borough_start,
+        ZIPSTARTNAME.neighborhood as neighborhood_start,
+        ZIPENDNAME.borough as borough_end,
+        ZIPENDNAME.neighborhood as neighborhood_end,
+        GSOD.temp AS day_mean_temperature, -- Mean temp
+        GSOD.wdsp AS day_mean_wind_speed, -- Mean wind speed
+        GSOD.prcp day_total_precipitation, -- Total precipitation
+        -- Since we're using trips from 2014 and 2015, we will add 5 years to make it look recent
+        DATE_ADD(DATE(TRIPS.starttime), INTERVAL 5 YEAR) as start_day,
+        DATE_ADD(DATE(TRIPS.stoptime), INTERVAL 5 YEAR) as stop_day,
+        -- Group trips into 10 minute intervals to reduces the number of rows(convert from seconds to minutes)
+        --TRIPS.tripduration AS trip_minutes,
+        ROUND(CAST(TRIPS.tripduration / 60 as INT64) , -1) AS trip_minutes,
+        COUNT(TRIPS.bikeid) AS trip_count
+      
+FROM `bigquery-public-data.new_york_citibike.citibike_trips` as TRIPS 
+INNER JOIN `bigquery-public-data.geo_us_boundaries.zip_codes`  ZIPSTART
+      ON ST_WITHIN(
+      (ST_GEOGPOINT(TRIPS.start_station_longitude, TRIPS.start_station_latitude)), ZIPSTART.zip_code_geom)
+INNER JOIN `bigquery-public-data.geo_us_boundaries.zip_codes`  ZIPEND
+      ON ST_WITHIN(
+      (ST_GEOGPOINT(TRIPS.end_station_longitude, TRIPS.end_station_latitude)), ZIPEND.zip_code_geom)
+INNER JOIN `bigquery-public-data.noaa_gsod.gsod20*` AS GSOD
+--PARSE_DATE returns the date in format yyyy-mm-dd to compare with the date format of DATE(TRIPS.starttime)
+      ON PARSE_DATE("%Y%m%d" , CONCAT(GSOD.Year,GSOD.mo,GSOD.da)) = DATE(TRIPS.starttime)
+  -- Note! Add your zipcode table name'
+INNER JOIN `cyclistic.zip_codes` ZIPSTARTNAME
+      ON ZIPSTART.zip_code = CAST(ZIPSTARTNAME.zip as STRING)
+  -- Note! Add your zipcode table name'
+INNER JOIN `cyclistic.zip_codes` ZIPENDNAME
+      ON ZIPEND.zip_code = CAST(ZIPENDNAME.zip as STRING)
+-- Use data from 2014 and 2015
+WHERE 
+-- This takes the weather data from one weather station
+      GSOD.wban = '94728' AND -- NEW YORK CENTRAL PARK 
+      --ZIPSTART.zip_code = "10023" AND
+      --ZIPEND.zip_code = "10024"
+      --AND usertype = "Subscriber" AND
+      --GSOD.temp = 66.5 AND
+
+
+      EXTRACT(YEAR FROM DATE(TRIPS.starttime)) BETWEEN 2014 AND 2015
+GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13
